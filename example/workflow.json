@@ -1,0 +1,311 @@
+{
+  "last_node_id": 8,
+  "last_link_id": 5,
+  "nodes": [
+    {
+      "id": 2,
+      "type": "LoadImage",
+      "pos": [
+        127.83357238769531,
+        73.6491470336914
+      ],
+      "size": [
+        342.131103515625,
+        337.4072265625
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "label": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            1
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "MASK",
+          "label": "MASK",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "lyf.png",
+        "image"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "Text Multiline",
+      "pos": [
+        120.15204620361328,
+        499.3385009765625
+      ],
+      "size": [
+        384.7411193847656,
+        76
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "label": "STRING",
+          "type": "STRING",
+          "links": [
+            3
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "BASE_MODEL_PATH",
+      "properties": {
+        "Node name for S&R": "Text Multiline"
+      },
+      "widgets_values": [
+        "/opt/liblibai-models/model-weights/black-forest-labs/FLUX.1-dev"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "Text Multiline",
+      "pos": [
+        119.90785217285156,
+        634.7177124023438
+      ],
+      "size": [
+        384.7411193847656,
+        76
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "label": "STRING",
+          "type": "STRING",
+          "links": [
+            4
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "OMNI_MODEL_PATH",
+      "properties": {
+        "Node name for S&R": "Text Multiline"
+      },
+      "widgets_values": [
+        "/opt/liblibai-models/user-workspace/songyiren/FYP/lc/OmniConsistency/Model/OmniConsistency.safetensors"
+      ]
+    },
+    {
+      "id": 8,
+      "type": "Text Multiline",
+      "pos": [
+        119.19976806640625,
+        770.6668090820312
+      ],
+      "size": [
+        384.7411193847656,
+        76
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "label": "STRING",
+          "type": "STRING",
+          "links": [
+            5
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "LORA_PATH",
+      "properties": {
+        "Node name for S&R": "Text Multiline"
+      },
+      "widgets_values": [
+        "/opt/liblibai-models/user-workspace/songyiren/FYP/lc/OmniConsistency/LoRAs/American_Cartoon_rank128_bf16.safetensors"
+      ]
+    },
+    {
+      "id": 1,
+      "type": "Comfyui_OmniConsistency",
+      "pos": [
+        516.8615112304688,
+        72.06837463378906
+      ],
+      "size": [
+        400,
+        336
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "spatial_image",
+          "label": "spatial_image",
+          "type": "IMAGE",
+          "link": 1
+        },
+        {
+          "name": "base_model_path",
+          "label": "base_model_path",
+          "type": "STRING",
+          "widget": {
+            "name": "base_model_path"
+          },
+          "link": 3
+        },
+        {
+          "name": "omni_model_path",
+          "label": "omni_model_path",
+          "type": "STRING",
+          "widget": {
+            "name": "omni_model_path"
+          },
+          "link": 4
+        },
+        {
+          "name": "lora_path",
+          "label": "lora_path",
+          "type": "STRING",
+          "shape": 7,
+          "widget": {
+            "name": "lora_path"
+          },
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "label": "image",
+          "type": "IMAGE",
+          "links": [
+            2
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Comfyui_OmniConsistency"
+      },
+      "widgets_values": [
+        "American Cartoon style,",
+        1024,
+        768,
+        3.5,
+        24,
+        2060906940,
+        "randomize",
+        "/opt/liblibai-models/model-weights/black-forest-labs/FLUX.1-dev",
+        "/opt/liblibai-models/user-workspace/songyiren/FYP/lc/OmniConsistency/Model/OmniConsistency.safetensors",
+        "/opt/liblibai-models/user-workspace/songyiren/FYP/lc/OmniConsistency/LoRAs/Paper_Cutting_rank128_bf16.safetensors"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "PreviewImage",
+      "pos": [
+        962.5514526367188,
+        69.88756561279297
+      ],
+      "size": [
+        734.9608764648438,
+        776.4161987304688
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "label": "images",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    }
+  ],
+  "links": [
+    [
+      1,
+      2,
+      0,
+      1,
+      0,
+      "IMAGE"
+    ],
+    [
+      2,
+      1,
+      0,
+      3,
+      0,
+      "IMAGE"
+    ],
+    [
+      3,
+      5,
+      0,
+      1,
+      1,
+      "STRING"
+    ],
+    [
+      4,
+      7,
+      0,
+      1,
+      2,
+      "STRING"
+    ],
+    [
+      5,
+      8,
+      0,
+      1,
+      3,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.2839025177495031,
+      "offset": [
+        58.24853086402137,
+        25.04092950555114
+      ]
+    },
+    "node_versions": {
+      "comfy-core": "0.3.14",
+      "was-node-suite-comfyui": "3ed45af34a14551dc28cb3127235cc7197d4633f"
+    }
+  },
+  "version": 0.4
+}
