@@ -1,10 +1,14 @@
 import os
 import torch
+import gc
 import numpy as np
 from PIL import Image
 
 from .src_inference.pipeline import FluxPipeline
 from .src_inference.lora_helper import set_single_lora, unset_lora
+
+from diffusers import DiffusionPipeline, FluxTransformer2DModel
+from transformers import T5EncoderModel
 
 # -----------------------------------------------------------------------------
 #  helper to clear cached key/value banks --------------------------------------
@@ -27,60 +31,122 @@ class _OmniGeneratorSingleton:
     _last_base: str | None = None
     _last_omni: str | None = None
     _last_lora: str | None = None
+    _last_use_nf4: bool | None = None
+    _last_nf4_path: str | None = None
 
     @classmethod
-    def _rebuild_pipeline(cls, base_model_path: str, dtype: torch.dtype, device: str):
-        print("[OmniConsistency] Loading FLUX base model …")
-        pipe = FluxPipeline.from_pretrained(base_model_path, torch_dtype=dtype).to(device)
+    def _rebuild_pipeline(cls, base_model_path: str, dtype: torch.dtype, device: str, use_nf4: bool, nf4_path: str | None):
+        print(f"[OmniConsistency] Rebuilding FLUX pipeline. Target device: {device}, dtype: {dtype}")
+        
+        components_to_load = {}
+
+        if use_nf4 and nf4_path and os.path.exists(nf4_path):
+            print(f"[OmniConsistency] Attempting to load NF4 quantized transformer and text_encoder_2 from: {nf4_path}")
+            try:
+                # Load components (presumably to CPU first by default, .to(device) later)
+                transformer = FluxTransformer2DModel.from_pretrained(
+                    nf4_path, subfolder="transformer", torch_dtype=dtype
+                )
+                components_to_load["transformer"] = transformer
+                print("[OmniConsistency] NF4 transformer loaded.")
+                
+                text_encoder_2 = T5EncoderModel.from_pretrained(
+                    nf4_path, subfolder="text_encoder_2", torch_dtype=dtype
+                )
+                components_to_load["text_encoder_2"] = text_encoder_2
+                print("[OmniConsistency] NF4 text_encoder_2 loaded.")
+                
+            except Exception as e:
+                print(f"[OmniConsistency] Error loading NF4 models from {nf4_path}: {e}")
+                print("[OmniConsistency] Falling back to full precision components from base model.")
+                components_to_load.clear() 
+        elif use_nf4 and (not nf4_path or not os.path.exists(nf4_path)):
+            print(f"[OmniConsistency] NF4 requested but nf4_path is invalid or not provided: '{nf4_path}'. Falling back to full precision.")
+            # components_to_load remains empty
+
+        print(f"[OmniConsistency] Loading FLUX pipeline from {base_model_path}...")
+        if components_to_load:
+            print(f"[OmniConsistency] Using pre-loaded components: {list(components_to_load.keys())}")
+        
+        pipe = FluxPipeline.from_pretrained(
+            base_model_path, 
+            torch_dtype=dtype, 
+            **components_to_load
+        ).to(device)
+        
         cls._pipe = pipe
         cls._initialized = True
+        print("[OmniConsistency] Pipeline rebuilt and moved to device.")
 
     @classmethod
     def initialize(
         cls,
         base_model_path: str,
         omni_model_path: str,
+        use_nf4: bool,
+        nf4_path: str,
         lora_path: str | None,
         device: str = "cuda",
         dtype: torch.dtype = torch.bfloat16,
     ) -> FluxPipeline:
         """Ensure pipeline is ready and matches the requested paths."""
+        rebuild_pipeline_needed = (
+            (not cls._initialized) or
+            (base_model_path != cls._last_base) or
+            (use_nf4 != cls._last_use_nf4) or
+            (use_nf4 and nf4_path != cls._last_nf4_path) # Only check nf4_path if use_nf4 is true
+        )
 
-        # 1. First‑time load or base model changed → full rebuild
-        if (not cls._initialized) or (base_model_path != cls._last_base):
-            if cls._initialized:
-                # try to free old pipe to save VRAM
+        if rebuild_pipeline_needed:
+            if cls._initialized and cls._pipe is not None:
+                print("[OmniConsistency] Pipeline configuration changed, unloading existing pipeline...")
                 try:
-                    cls._pipe.to("cpu")  # type: ignore
-                except Exception:
-                    pass
+                    cls._pipe.to("cpu")
+                except Exception as e:
+                    print(f"[OmniConsistency] Warning: Failed to move old pipeline to CPU: {e}")
                 del cls._pipe
+                cls._pipe = None # Explicitly set to None
                 torch.cuda.empty_cache()
-            cls._rebuild_pipeline(base_model_path, dtype, device)
+                gc.collect() # Force garbage collection
+                print("[OmniConsistency] Old pipeline unloaded and cache cleared.")
+            cls._rebuild_pipeline(base_model_path, dtype, device, use_nf4, nf4_path)
 
         pipe = cls._pipe  # type: ignore
 
-        # 2. OmniConsistency LoRA changed
-        if omni_model_path != cls._last_omni:
-            print("[OmniConsistency] Switching OmniConsistency model …")
-            unset_lora(pipe.transformer)
-            set_single_lora(pipe.transformer, omni_model_path, lora_weights=[1], cond_size=512)
+        # Handle OmniConsistency LoRA
+        if omni_model_path != cls._last_omni or rebuild_pipeline_needed:
+            print(f"[OmniConsistency] Updating OmniConsistency LoRA (path changed: {omni_model_path != cls._last_omni}, pipeline rebuilt: {rebuild_pipeline_needed})")
+            if pipe and hasattr(pipe, 'transformer'):
+                unset_lora(pipe.transformer)
+                set_single_lora(pipe.transformer, omni_model_path, lora_weights=[1], cond_size=512)
+            else:
+                print("[OmniConsistency] Warning: Pipe or transformer not available for Omni LoRA.")
 
-        # 3. Extra LoRA changed
-        if lora_path != cls._last_lora:
-            try:
-                pipe.unload_lora_weights()
-            except Exception:
-                pass
-            if lora_path:
-                print("[OmniConsistency] Loading user LoRA …")
-                folder, name = os.path.split(lora_path)
-                if folder == "":
-                    folder = "."
-                pipe.load_lora_weights(folder, weight_name=name)
+        # Handle Extra LoRA
+        if lora_path != cls._last_lora or rebuild_pipeline_needed:
+            print(f"[OmniConsistency] Updating User LoRA (path changed: {lora_path != cls._last_lora}, pipeline rebuilt: {rebuild_pipeline_needed})")
+            if pipe:
+                try:
+                    pipe.unload_lora_weights() 
+                except Exception:
+                    pass 
+                
+                if lora_path: 
+                    print(f"[OmniConsistency] Loading user LoRA from: {lora_path}")
+                    folder, name = os.path.split(lora_path)
+                    effective_folder = folder if folder else "."
+                    try:
+                        pipe.load_lora_weights(effective_folder, weight_name=name)
+                        print(f"[OmniConsistency] User LoRA '{name}' loaded from '{effective_folder}'.")
+                    except Exception as e:
+                        print(f"[OmniConsistency] Error loading user LoRA '{name}' from '{effective_folder}': {e}")
+            else:
+                print("[OmniConsistency] Warning: Pipe not available for User LoRA.")
 
-        # 4. Record current state
+        # Update all last known states for the next call
         cls._last_base = base_model_path
+        cls._last_use_nf4 = use_nf4
+        cls._last_nf4_path = nf4_path
         cls._last_omni = omni_model_path
         cls._last_lora = lora_path
         return pipe
@@ -141,6 +207,8 @@ class Comfyui_OmniConsistency:
                 "seed":   ("INT", {"default": 42, "min": 0, "max": 2**32-1}),
                 "base_model_path": ("STRING", wide | {"default": "black-forest-labs/FLUX.1-dev"}),
                 "omni_model_path": ("STRING", wide | {"default": "/path/to/OmniConsistency.safetensors"}),
+                "use_nf4": ("BOOLEAN", {"default": False}),
+                "nf4_path": ("STRING", {"default": "models/checkpoints/FLUX.1-dev_Quantized_nf4", "tooltip": "GGUF模型路径，如果使用GGUF模型则需填写"}),
             },
             "optional": {
                 "lora_path": (
@@ -234,11 +302,15 @@ class Comfyui_OmniConsistency:
         seed,
         base_model_path,
         omni_model_path,
-        lora_path="",
+        use_nf4,
+        nf4_path,
+        lora_path=""
     ):
         _OmniGeneratorSingleton.initialize(
             base_model_path=base_model_path,
             omni_model_path=omni_model_path,
+            use_nf4=use_nf4,
+            nf4_path=nf4_path,
             lora_path=lora_path if lora_path else None,
         )
 
